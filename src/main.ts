@@ -1975,11 +1975,7 @@ async function buildGGUFSession(repo: string, ggufFile: string, progressEl: HTML
       attnPostNorm: roleBuf('attnPostNorm', l),
       ffnPostNorm: roleBuf('ffnPostNorm', l),
     };
-    if (config.layers[l].kind === 'short_conv') {
-      assignProj(lw, 'shortConvInProj', 'shortConvInProj', l);
-      assignProj(lw, 'shortConvOutProj', 'shortConvOutProj', l);
-      lw.shortConvWeight = requireBuf('shortConvWeight', l);
-    } else if (config.layers[l].kind === 'linear_attention') {
+    if (config.layers[l].kind === 'linear_attention') {
       assignProj(lw, 'linearInProjQKV', 'linInProjQKV', l);
       assignProj(lw, 'linearInProjA', 'linInProjA', l);
       assignProj(lw, 'linearInProjB', 'linInProjB', l);
@@ -2000,7 +1996,6 @@ async function buildGGUFSession(repo: string, ggufFile: string, progressEl: HTML
       assignProj(lw, 'oProj', 'oProj', l);
       lw.qNorm = roleBuf('qNorm', l);
       lw.kNorm = roleBuf('kNorm', l);
-      if (config.attnHeadGate) assignProj(lw, 'attnHeadGate', 'attnHeadGate', l);
       if (config.attentionBias) {
         lw.qBias = roleBuf('qBias', l);
         lw.kBias = roleBuf('kBias', l);
@@ -2026,12 +2021,6 @@ async function buildGGUFSession(repo: string, ggufFile: string, progressEl: HTML
       lw.layerOutScale = roleBuf('layerOutScale', l);
     }
     layers.push(lw);
-  }
-  const convCount = config.layers.filter(d => d.kind === 'short_conv').length;
-  if (convCount > 0) {
-    const swaCount = config.layers.filter(d => d.kind === 'sliding_attention').length;
-    console.log(`[GGUF] Short-conv hybrid: ${convCount} conv + ${swaCount} sliding + `
-      + `${config.numLayers - convCount - swaCount} global attention layers`);
   }
   if (config.isHybrid) {
     const linCount = config.layers.filter(d => d.kind === 'linear_attention').length;
@@ -2097,8 +2086,8 @@ async function buildGGUFSession(repo: string, ggufFile: string, progressEl: HTML
   const tokenizer = await createTokenizer({ modelId: repo });
   // Guard: a tokenizer from the wrong model family silently produces garbage
   // (e.g. Qwen3-8B fallback vocab 151936 vs Qwen3.6 vocab 248320).
-  // The embedding table may be padded past the real vocab (LFM3: 125033
-  // tokens, 128000 rows), so allow more slack on the model side; a tokenizer
+  // The embedding table may be padded past the real vocab (some GGUFs round
+  // the row count up), so allow more slack on the model side; a tokenizer
   // LARGER than the table would index past it.
   const vocabSlack = tokenizer.vocabSize - config.vocabSize;
   if (tokenizer.vocabSize && (vocabSlack > 1024 || vocabSlack < -4096)) {
@@ -3426,7 +3415,7 @@ if (savedToken) {
 
 restoreUISettings();
 const lastModel = localStorage.getItem(UI_STORE + 'last-model');
-// ?model=local/lfm3-1.7b (the installer's launcher) only fills the field on
+// ?model=local/qwen3.5-2b (the installer's launcher) only fills the field on
 // a first run; the user's last choice wins, and nothing loads until Load.
 const urlModel = new URLSearchParams(window.location.search).get('model');
 if (lastModel) ($('model-repo') as HTMLInputElement).value = lastModel;
