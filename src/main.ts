@@ -2217,13 +2217,17 @@ async function buildGGUFSession(repo: string, ggufFile: string, progressEl: HTML
     const { embedFlux2Prompt } = await import('./diffusion/text-embedder');
     return embedFlux2Prompt(engine, tokenizer, prompt);
   };
-  // Golden-parity hooks (scripts/test-lfm3-parity.mts). __logitProbe
+  // Golden-parity hooks (scripts/test-model-parity.mts). __logitProbe
   // prefills raw prompt ids in `chunk`-token forwards, then decodes `steps`
   // tokens — greedy, or teacher-forced with `forced` (the reference's
   // tokens, so every step stays comparable) — returning each step's top-5
   // (id, softmax prob) in float64. It runs on its own KV cache; the chat
   // session's cache is untouched.
   (globalThis as any).__tokenize = (text: string) => tokenizer.encode(text);
+  // The prefill chunk sizes the engine is built for: generate.ts's default and
+  // forward-pass.ts's MAX_PREFILL (hybrid models: 16 / 64; others 512 / 512).
+  (globalThis as any).__prefillLimits = () =>
+    (config.isHybrid ? { chunk: 16, max: 64 } : { chunk: 512, max: 512 });
   (globalThis as any).__chatTokens = (messages: Array<{ role: string; content: string }>, enableThinking = true) =>
     applyChatTemplate(tokenizer, messages, { enableThinking });
   // `want[s]` lists extra ids whose probability step s should also report.
@@ -2233,6 +2237,9 @@ async function buildGGUFSession(repo: string, ggufFile: string, progressEl: HTML
     const { readBuffer } = await import('./engine/buffers');
     const V = config.vocabSize;
     const kv = engine.createKVCache(Math.min(promptIds.length + steps + 1, MAX_ATTN_SEQ_LEN));
+    // Larger forwards than the engine's prefill buffers hold fail validation
+    // (zero-size bindings) and return garbage instead of an error.
+    chunk = Math.max(1, Math.min(chunk, config.isHybrid ? 64 : 512));
     const top5 = async (buf: GPUBuffer, extra: number[] = []) => {
       const lg = new Float32Array(await readBuffer(gpu!.device, buf, V * 4));
       let max = -Infinity;
